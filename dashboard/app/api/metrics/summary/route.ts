@@ -1,60 +1,70 @@
 import { NextResponse } from 'next/server';
 import { fetchAllTickets, fetchTicketConversations } from '../../_lib/freshdesk';
+import { withCache, cacheKey } from '../../_lib/cache';
+import { isBacklogStatus, isPublicAgentReply, minutesBetween, median, percentile } from '../../_lib/kpi';
 
-function minutesBetween(start: string, end: string): number {
-  return (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60);
-}
+export const runtime = 'nodejs';
 
-function percentile(arr: number[], p: number): number | null {
-  if (arr.length === 0) return null;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const index = (p / 100) * (sorted.length - 1);
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  const weight = index - lower;
-  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
-}
-
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const tickets = await fetchAllTickets();
-    const openStatuses = [2, 3, 6]; // Open, Pending, Waiting (excl Resolved/Closed)
-    const closedStatuses = [4, 5]; // Resolved, Closed
-    
-    const open = tickets.filter(t => openStatuses.includes(t.status));
-    const closed = tickets.filter(t => closedStatuses.includes(t.status));
+    const url = new URL(req.url);
+    const from = url.searchParams.get('from') ?? '';
+    const to = url.searchParams.get('to') ?? '';
 
-    // Calculate FRT from conversations (sample)
-    const frtValues: number[] = [];
-    for (const ticket of tickets.slice(0, 100)) {
-      try {
-        const convs = await fetchTicketConversations(ticket.id);
-        const firstPublicReply = convs.find(c => !c.incoming && (c.private === false || c.private === undefined));
-        if (firstPublicReply) {
-          const frt = minutesBetween(ticket.created_at, firstPublicReply.created_at);
-          if (frt >= 0) frtValues.push(frt);
+    const key = cacheKey({ endpoint: 'summary', from, to });
+
+    const { value, cache } = await withCache({
+      key,
+      ttlMs: 120_000, // 2 min
+      fn: async () => {
+        const tickets = await fetchAllTickets();
+        const closedStatuses = [4, 5]; // Resolved, Closed
+        
+        const open = tickets.filter(t => isBacklogStatus(t.status));
+        const closed = tickets.filter(t => closedStatuses.includes(t.status));
+
+        // Calculate FRT from conversations (sample)
+        const frtValues: number[] = [];
+        for (const ticket of tickets.slice(0, 100)) {
+          try {
+            const convs = await fetchTicketConversations(ticket.id);
+            const firstPublicReply = convs.find(c => isPublicAgentReply(c));
+            if (firstPublicReply) {
+              const frt = minutesBetween(ticket.created_at, firstPublicReply.created_at);
+              if (frt >= 0) frtValues.push(frt);
+            }
+          } catch (e) {
+            // Skip
+          }
         }
-      } catch (e) {
-        // Skip
-      }
-    }
 
-    // Calculate Resolution Time
-    const resolutionValues: number[] = [];
-    for (const ticket of closed) {
-      const resolution = minutesBetween(ticket.created_at, ticket.updated_at);
-      if (resolution >= 0) resolutionValues.push(resolution);
-    }
+        // Calculate Resolution Time
+        const resolutionValues: number[] = [];
+        for (const ticket of closed) {
+          const resolution = minutesBetween(ticket.created_at, ticket.updated_at);
+          if (resolution >= 0) resolutionValues.push(resolution);
+        }
 
-    return NextResponse.json({
-      total_tickets: tickets.length,
-      open_tickets: open.length,
-      closed_tickets: closed.length,
-      median_frt_minutes: percentile(frtValues, 50),
-      p90_frt_minutes: percentile(frtValues, 90),
-      median_resolution_minutes: percentile(resolutionValues, 50),
-      p90_resolution_minutes: percentile(resolutionValues, 90)
+        return {
+          total_tickets: tickets.length,
+          open_tickets: open.length,
+          closed_tickets: closed.length,
+          median_frt_minutes: median(frtValues),
+          p90_frt_minutes: percentile(frtValues, 0.9),
+          median_resolution_minutes: median(resolutionValues),
+          p90_resolution_minutes: percentile(resolutionValues, 0.9),
+        };
+      },
     });
+
+    return NextResponse.json(
+      { ...value, meta: { cache } },
+      {
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      }
+    );
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
