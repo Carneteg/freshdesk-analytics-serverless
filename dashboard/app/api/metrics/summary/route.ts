@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchTickets, fetchTicketConversations } from '../../_lib/freshdesk';
+import { fetchAllTickets, fetchTicketConversations } from '../../_lib/freshdesk';
 
 function minutesBetween(start: string, end: string): number {
   return (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60);
@@ -17,16 +17,16 @@ function percentile(arr: number[], p: number): number | null {
 
 export async function GET() {
   try {
-    const tickets = await fetchTickets();
+    const tickets = await fetchAllTickets();
     const openStatuses = [2, 3, 6]; // Open, Pending, Waiting (excl Resolved/Closed)
     const closedStatuses = [4, 5]; // Resolved, Closed
     
     const open = tickets.filter(t => openStatuses.includes(t.status));
     const closed = tickets.filter(t => closedStatuses.includes(t.status));
 
-    // Calculate FRT from conversations
+    // Calculate FRT from conversations (sample)
     const frtValues: number[] = [];
-    for (const ticket of tickets.slice(0, 50)) { // Sample for performance
+    for (const ticket of tickets.slice(0, 100)) {
       try {
         const convs = await fetchTicketConversations(ticket.id);
         const firstPublicReply = convs.find(c => !c.incoming && (c.private === false || c.private === undefined));
@@ -35,7 +35,7 @@ export async function GET() {
           if (frt >= 0) frtValues.push(frt);
         }
       } catch (e) {
-        // Skip tickets where conversations cannot be fetched
+        // Skip
       }
     }
 

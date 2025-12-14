@@ -1,3 +1,12 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/metrics/backlog/route": "app/api/metrics/backlog/route.js",
+  "/api/metrics/frt/route": "app/api/metrics/frt/route.js",
+  "/api/metrics/oldest_open/route": "app/api/metrics/oldest_open/route.js",
+  "/api/metrics/resolution/route": "app/api/metrics/resolution/route.js",
+  "/api/metrics/summary/route": "app/api/metrics/summary/route.js",
+  "/api/metrics/top_tags/route": "app/api/metrics/top_tags/route.js",
+  "/api/metrics/volume/route": "app/api/metrics/volume/route.js",
+  "/page": "app/page.js",
   "/api/health/route": "app/api/health/route.js"
 }
