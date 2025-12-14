@@ -20,7 +20,9 @@ Byggd för Customer Care Managers med fokus på beslutsstöd.
 ## FILE STRUCTURE
 ```
 dashboard/
-├── app/
+├── app/cd /workspaces/freshdesk-analytics-serverless/dashboard
+python3 scripts/extract_from_md.py
+
 │   ├── layout.tsx
 │   ├── page.tsx                    # Overview (Mission Control)
 │   ├── backlog/
